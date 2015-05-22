@@ -1,0 +1,154 @@
+---
+title: "REL_INV"
+author: "Floriano Peixoto"
+date: "Tuesday, May 19, 2015"
+output: html_document
+---
+
+```{r, echo=FALSE,render=FALSE}
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(scales)
+```
+
+Relatório que visa avaliar os resultados das Vacas Leteiras
+
+```{r, echo=FALSE}
+ativos <- c("ALUP11", "TAEE11","GRND3","ITUB4","ETER3","ELET6","HGTX3","VALE5","HBOR3")
+PRECOS <- NULL;
+
+
+avaliacao_valor_perm <- NULL;
+
+index <- length(ativos)
+for(id in 1:index){
+    avaliacao_valor <- NULL;
+    
+    ATIVO <- read.csv(paste("http://www.google.com/finance/historical?q=BVMF%3A",ativos[id],"&output=csv",sep=""), stringsAsFactors = FALSE)
+    names(ATIVO) <- c("DATE","OPEN","HIGH","LOW","CLOSE","VOLUME")
+    
+    ATIVO <-  mutate(ATIVO, DATE = gsub("May","Mar",DATE)) %>%
+        mutate(DATE = gsub("Apr","Abr",DATE)) %>%
+        mutate(DATE = gsub("Feb","Fev",DATE)) %>%
+        mutate(DATE = gsub("Sep","Set",DATE)) %>%
+        mutate(DATE = gsub("Aug","Ago",DATE)) %>%
+        mutate(DATE = gsub("Oct","Out",DATE)) %>%
+        mutate(DATE = gsub("Dec","Dez",DATE))
+    
+    mdHigh <- median(ATIVO[1:30,3])
+    mdLow <- median(ATIVO[1:30,4])
+    
+    if(is.null(PRECOS)){
+        PRECOS <- data.frame(list(ativos[id],Sys.Date(), mean(mdHigh,mdLow)),check.names = FALSE)
+        names(PRECOS) <- c("ATIVO","DATA","VALOR")    
+    }else{
+        ATUAL <-  data.frame(list(ativos[id],Sys.Date(), mean(mdHigh,mdLow)),check.names = FALSE)
+        names(ATUAL) <- c("ATIVO","DATA","VALOR")  
+        PRECOS <- rbind(PRECOS,ATUAL)
+    }
+    
+    for(indice in 1:length(ATIVO)){
+        if(indice < length(ATIVO)){
+            valor_mudanca <- ((ATIVO$CLOSE[indice] / ATIVO$CLOSE[indice+1]) - 1 )* 100
+            
+            if(is.null(avaliacao_valor)){
+                avaliacao_valor <- data.frame(list(ativos[id], valor_mudanca,as.Date(ATIVO$DATE,"%d-%b-%y")),check.names = FALSE)
+                names(avaliacao_valor) <- c("ATIVO","VALOR","DATA")    
+            }else{
+                ATUAL <- data.frame(list(ativos[id], valor_mudanca,as.Date(ATIVO$DATE,"%d-%b-%y")),check.names = FALSE)
+                names(ATUAL) <- c("ATIVO","VALOR","DATA")  
+                avaliacao_valor <- rbind(avaliacao_valor,ATUAL)
+            }
+            
+        }
+    }
+    
+    avaliacao_valor <- tbl_df(avaliacao_valor)
+    
+    avaliacao_valor <- arrange(avaliacao_valor, DATA) 
+
+    avaliacao_valor$VALOR <- cumsum(avaliacao_valor$VALOR)
+    
+    
+    if(is.null(avaliacao_valor_perm)){
+        avaliacao_valor_perm <- avaliacao_valor
+        names(avaliacao_valor_perm) <- c("ATIVO","VALOR","DATA") 
+        avaliacao_valor <- NULL
+    }else{
+        avaliacao_valor_perm <- rbind(avaliacao_valor_perm,avaliacao_valor)
+        avaliacao_valor <- NULL
+    }
+    
+    
+}
+
+avaliacao_valor_perm <- arrange(avaliacao_valor_perm, ATIVO, DATA) %>%
+    group_by(ATIVO) %>%
+    mutate(month = as.numeric(format(DATA, "%m")), year = as.numeric(format(DATA, "%Y")))
+avaliacao_valor_perm$ATIVO <- as.factor(avaliacao_valor_perm$ATIVO)
+```
+
+Os preços que estamos colocando se baseiam em encontrar a mediana da alta e da baixa e calcular a média entre as duas:
+
+```{r, echo=FALSE}
+PRECOS
+```
+
+Para avaliação dos ativos vamos agora avaliar o crescimento de seus valores.
+
+1 Mes Dias:
+
+```{r, echo=FALSE}
+
+dados <- filter(avaliacao_valor_perm, month == as.numeric(format(Sys.Date(), "%m")) - 1) %>%
+        filter(year == as.numeric(format(Sys.Date(), "%Y"))) %>%
+        select(VALOR, DATA)
+
+ggplot(dados, aes(x=DATA,y=VALOR)) + geom_line(aes(colour=ATIVO))  + 
+    scale_x_date(breaks = date_breaks("days"), labels = date_format("%d")) +
+        facet_wrap( ~ ATIVO) +
+    coord_cartesian(ylim = c(-120, 120))
+
+```
+
+3 meses:
+
+```{r, echo=FALSE}
+mes_corrente <- as.number(format(Sys.Date(), "%m")))
+dados <- select(avaliacao_valor_perm, VALOR) %>%
+        filter(month = c(mes_corrente,mes_corrente - 1, mes_corrente-2), year = (format(date(), "%Y")))
+
+
+ggplot(tail(avaliacao_valor_perm,90 * 6), aes(x=DATA,y=VALOR)) + geom_line(aes(colour=ATIVO))  + 
+      scale_x_date(breaks = date_breaks("months"), labels = date_format("%b-%y")) +
+        facet_wrap( ~ ATIVO) +
+    coord_cartesian(ylim = c(-120, 120))
+
+```
+
+120 Dias:
+
+```{r, echo=FALSE}
+
+
+
+ggplot(tail(avaliacao_valor_perm,120 * 6), aes(x=DATA,y=VALOR)) + geom_line(aes(colour=ATIVO))  + 
+      scale_x_date(breaks = date_breaks("months"), labels = date_format("%b-%y")) +
+        facet_wrap( ~ ATIVO) +
+    coord_cartesian(ylim = c(-120, 120))
+
+```
+
+240 Dias:
+
+```{r, echo=FALSE}
+
+
+
+ggplot(tail(avaliacao_valor_perm,240 * 6), aes(x=DATA,y=VALOR)) + geom_line(aes(colour=ATIVO))  + 
+      scale_x_date(breaks = date_breaks("months"), labels = date_format("%b-%y")) +
+        facet_wrap( ~ ATIVO) +
+    coord_cartesian(ylim = c(-120, 120)) 
+
+```
